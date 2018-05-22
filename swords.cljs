@@ -9,21 +9,32 @@
 (defn format* [fmt args] (let [fmt  (or fmt "") args (mapv nil->str args)] (apply gstr/format fmt args)))
 (defn formato [fmt & args] (format* fmt args))
 (defn drop-nth [n coll] (keep-indexed #(if (not= %1 n) %2) coll))
+(defn deaccent [input]
+  (reduce (fn [s [pat repl]]
+            (clojure.string/replace s pat repl))
+          input
+          [[#"[éèêë]" "e"]
+           [#"[á]"    "a"]
+           [#"[űúü]"  "u"]
+           [#"[őöó]"  "o"]
+           [#"[í]"    "i"]
+           ]))
 
 (defn fancy [sample]
  (loop [x [0      []    0    false      2        ]  ]
   (let [  [index  coll  lvl  in-a-str?  line-type] x
         exist (< index (count sample))
         c (when exist (nth sample index))
-        last-c (when-not (= index 0) (nth sample (dec index))) 
-        new-line (if (= lvl 0) [] [\newline])
-        line (fn [lc nc l] (if (and (= last-c lc) (= c nc)) l line-type))
-        line-type (line \[ \{ 1)
-        line-type (line \} \] 2)
-        lvl ((case c \{ + \} - \[ + \] - (fn [x y] x)) lvl line-type)
-        ext (repeat lvl \space)
+        last-c (when-not (= index 0) (nth sample (dec index)))
+        prev? (fn [lc nc] (and (= last-c lc) (= c nc)))
+        line-type (cond
+                    (prev? \[ \{) 1
+                    (prev? \} \]) 2
+                    :else line-type)
+        lvl (if (= last-c nil) 0
+              ((case c \{ + \} - \[ + \] - (fn [x y] x)) lvl line-type))
         c (if-not in-a-str?
-            (let [new-line (apply conj new-line ext)]
+            (let [new-line (apply conj [\newline] (repeat lvl \space))]
               (case c
                 \newline ""
                 \, new-line 
@@ -36,6 +47,14 @@
         return [(inc index) coll lvl in-a-str? line-type]]
   (if c (recur return)
     (apply str coll)))))
+
+(defn deep-merge [v & vs]
+  (letfn [(rec-merge [v1 v2]
+            (if (and (map? v1) (map? v2))
+              (merge-with deep-merge v1 v2)
+              v2))]
+    (when (some identity vs)
+      (reduce #(rec-merge %1 %2) v vs))))
 
 (defn round [x & {p :precision}] (if p (let [scale (Math/pow 10 p)] (-> x (* scale) Math/round (/ scale))) (Math/round x)))
 (defn mapfun "map a function on all map values" [m f] (into {} (for [[k v] m] [k (f v)])))
